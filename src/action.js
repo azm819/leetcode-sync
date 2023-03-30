@@ -1,5 +1,10 @@
 const axios = require('axios');
+const { wrapper } = require('axios-cookiejar-support');
 const { Octokit } = require('@octokit/rest');
+const { CookieJar } = require('tough-cookie');
+
+const jar = new CookieJar();
+const client = wrapper(axios.create({ jar }));
 
 const COMMIT_MESSAGE = 'Sync LeetCode submission';
 const LANG_TO_EXTENSION = {
@@ -25,6 +30,16 @@ const LANG_TO_EXTENSION = {
   'typescript': 'ts',
 };
 
+const URL = 'https://leetcode.com/graphql';
+const QUESTION_DATA_QUERY = `
+  query questionData($titleSlug: String!) {
+    question(titleSlug: $titleSlug) {
+      questionFrontendId
+      difficulty
+    }
+  }
+`;
+
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
 function log(message) {
@@ -32,7 +47,36 @@ function log(message) {
 }
 
 function normalizeName(problemName) {
-  return problemName.toLowerCase().replace(/\s/g, '_');
+  return problemName.replace(/\s/g, '_');
+}
+
+async function getProblemDescription(slug) {
+  try {
+    const res = await client.post(URL, {
+      query: QUESTION_DATA_QUERY,
+      variables: {
+        titleSlug: slug,
+      },
+    });
+  
+    const questionObj = res.data.data.question;
+    const questionFrontendId = questionObj.questionFrontendId;
+    let result = "0".repeat(4 - questionFrontendId.length) + questionFrontendId;
+    switch (questionObj.difficulty) {
+      case "Easy":
+        result += "🟢";
+        break;
+      case "Medium":
+        result += "🟡";
+        break;
+      case "Hard":
+        result += "🔴";
+        break;
+    }
+    return result;
+  } catch (exception) {
+    throw exception;
+  }
 }
 
 async function commit(params) {
@@ -48,7 +92,7 @@ async function commit(params) {
     destinationFolder
   } = params;
 
-  const name = normalizeName(submission.title);
+  const name = await getProblemDescription(submission.title_slug) + normalizeName(submission.title);
   log(`Committing solution for ${name}...`);
 
   if (!LANG_TO_EXTENSION[submission.lang]) {
@@ -56,13 +100,13 @@ async function commit(params) {
   }
 
   const prefix = !!destinationFolder ? `${destinationFolder}/` : '';
-  const path = `${prefix}problems/${name}/solution.${LANG_TO_EXTENSION[submission.lang]}`
+  const path = `${prefix}${name}.${LANG_TO_EXTENSION[submission.lang]}`
 
   const treeData = [
     {
       path,
       mode: '100644',
-      content: submission.code,
+      content: submission.code + '\n',
     }
   ];
 
