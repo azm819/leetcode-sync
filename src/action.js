@@ -48,8 +48,7 @@ function pad(n) {
 
 function normalizeName(problemName) {
   return problemName
-    .toLowerCase()
-    .replace(/\s/g, "-")
+    .replace(/\s/g, "_")
     .replace(/[^a-zA-Z0-9_-]/gi, "");
 }
 
@@ -72,6 +71,7 @@ async function getInfo(submission, session, csrfToken) {
         code
         question {
           questionId
+          difficulty
         }
       }
     }`,
@@ -95,12 +95,14 @@ async function getInfo(submission, session, csrfToken) {
       const questionId = pad(
         response.data.data.submissionDetails.question.questionId.toString(),
       );
+      const difficulty = response.data.data.submissionDetails.question.difficulty.toString();
 
       log(`Got info for submission #${submission.id}`);
       return {
         runtimePerc: runtimePercentile,
         memoryPerc: memoryPercentile,
         qid: questionId,
+        difficulty: difficulty,
         code: response.data.data.submissionDetails.code,
       };
     } catch (exception) {
@@ -146,14 +148,26 @@ async function commit(params) {
   const prefix = !!destinationFolder ? destinationFolder : "";
   const commitName = !!commitHeader ? commitHeader : COMMIT_MESSAGE;
 
+  switch (submission.difficulty) {
+    case "Easy":
+      difficultyMark = "🟢";
+      break;
+    case "Medium":
+      difficultyMark = "🟡";
+      break;
+    case "Hard":
+      difficultyMark = "🔴";
+      break;
+  }
+
   if ("runtimePerc" in submission) {
     message = `${commitName} Runtime - ${submission.runtime} (${submission.runtimePerc}), Memory - ${submission.memory} (${submission.memoryPerc})`;
-    qid = `${submission.qid}-`;
+    qid = `${submission.qid}`;
   } else {
     message = `${commitName} Runtime - ${submission.runtime}, Memory - ${submission.memory}`;
     qid = "";
   }
-  const folderName = `${qid}${name}`;
+  const folderName = `${qid}${difficultyMark}${name}`;
   // Markdown file for the problem with question data
   const questionPath = path.join(prefix, folderName, "README.md");
 
